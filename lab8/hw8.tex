@@ -1,0 +1,210 @@
+\documentclass[10pt,letter]{article} 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%% PREAMBLE %%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% -------------------- defaults -------------------- %
+% load lots o' packages
+
+% layout control
+\usepackage[paper=a4paper,left=25mm,right=25mm,top=30mm,bottom=25mm]{geometry}
+\usepackage[onehalfspacing]{setspace}
+\setlength{\parskip}{.5em}
+\usepackage{rotating}
+\usepackage{setspace}
+\usepackage{fancyhdr}	
+\usepackage{parallel}
+\usepackage{parcolumns}
+
+% math typesetting
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{relsize}
+
+\usepackage{verbatim}
+
+% restricts float objects to be inserted before end of section
+% creates float barriers
+\usepackage[section]{placeins}
+
+% tables
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage{multirow}
+\usepackage{longtable}
+
+\usepackage[%
+decimalsymbol=.,
+digitsep=fullstop
+]{siunitx}
+
+% to adapt caption style
+\usepackage[font={small},labelfont=bf]{caption}
+
+% references
+\usepackage[longnamesfirst]{natbib}
+\bibpunct{(}{)}{;}{a}{}{,}
+
+% footnotes at bottom
+\usepackage[bottom]{footmisc}
+
+% to change enumeration symbols begin{enumerate}[(a)]
+\usepackage{enumerate}
+
+% to make enumerations and itemizations within paragraphs or
+% lines. f.i. begin{inparaenum} for (a) is (b) and (c)
+\usepackage{paralist}
+
+% to colorize links in document. See color specification below
+\usepackage[pdftex,hyperref,x11names]{xcolor}
+
+% for multiple references and insertion of the word "figure" or "table"
+% \usepackage{cleveref}
+
+% load the hyper-references package and set document info
+\usepackage[pdftex]{hyperref}
+
+% graphics stuff
+\usepackage{subfig}
+\usepackage{graphicx}
+\usepackage[space]{grffile} % allows us to specify directories that have spaces
+\usepackage{placeins} % prevents floats from moving past a \FloatBarrier
+%\usepackage{tikz}
+% \usepackage{pgfplots}
+
+% define clickable links and their colors
+\hypersetup{%
+unicode=false,          % non-Latin characters in Acrobat's bookmarks
+pdftoolbar=true,        % show Acrobat's toolbar?
+pdfmenubar=true,        % show Acrobat's menu?
+pdffitwindow=false,     % window fit to page when opened
+pdfstartview={FitH},    % fits the width of the page to the window
+pdfnewwindow=true,%
+pagebackref=false,%
+pdfauthor={Shahryar Minhas},%
+pdftitle={Title},%
+colorlinks,%
+citecolor=black,%
+filecolor=black,%
+linkcolor=black,%
+urlcolor=RoyalBlue4}
+
+% Including External Code
+\usepackage{verbatim}
+\usepackage{listings}
+\lstset{
+	language=R,
+	basicstyle=\scriptsize\ttfamily,
+	commentstyle=\ttfamily\color{gray},
+	numbers=left,
+	numberstyle=\ttfamily\color{gray}\footnotesize,
+	stepnumber=1,
+	numbersep=5pt,
+	backgroundcolor=\color{white},
+	showspaces=false,
+	showstringspaces=false,
+	showtabs=false,
+	frame=single,
+	tabsize=2,
+	captionpos=b,
+	breaklines=true,
+	breakatwhitespace=false,
+	title=\lstname,
+	escapeinside={},
+	keywordstyle={},
+	morekeywords={}
+	}
+
+% -------------------------------------------------- %
+
+
+% -------------------- title -------------------- %
+
+\title{}
+\vspace{\baselineskip}
+\author{}
+\date{\today}
+
+\setlength{\headheight}{15pt}
+\setlength{\headsep}{20pt}
+\pagestyle{fancyplain}
+ 
+\fancyhf{}
+ 
+\lhead{\fancyplain{}{POLSCI 733: Homework 8}}
+\chead{\fancyplain{}{}}
+\rhead{\fancyplain{}{\today}}
+\rfoot{\fancyplain{}{\thepage}}
+
+% ----------------------------------------------- %
+
+
+% -------------------- customizations -------------------- %
+
+% define the includegraphics search path
+\graphicspath{{Graphics/}}
+
+% easy commands for number propers
+\newcommand{\first}{$1^{\text{st}}$}
+\newcommand{\second}{$2^{\text{nd}}$}
+\newcommand{\third}{$3^{\text{rd}}$}
+\newcommand{\nth}[1]{${#1}^{\text{th}}$}
+
+% easy command for boldface math symbols
+\newcommand{\mbs}[1]{\boldsymbol{#1}}
+
+% define bibliography style
+\bibliographystyle{/Users/janus829/Documents/APSR}
+
+% -------------------------------------------------------- %
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%% DOCUMENT %%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% \doublespacing 
+
+\begin{document}
+
+This homework is due before class, March 24$^{th}$ 2015. 
+
+\begin{itemize}
+\item Do not use Zelig for this homework.
+\item Problem 1: Create a generic function to estimate a logistic model using maximum likelihood.
+	\begin{itemize}
+		\item Use the examples in the lecture or textbook to create this function. For now assume that you have no missing data. 
+		\item The inputs to this function should be a matrix of covariates and a vector of values for the dependent variable.
+		\item The outputs of this function should contain a matrix of coefficients similar in structure to what was required in the midterm, a variance covariance matrix, and a check of whether or not the model converged.
+	\end{itemize}
+\item Problem 2: Use this function to analyze the Muller and Seligson data on insurgency and inequality in the following way:
+	\begin{itemize}
+		\item Download the file \textbf{Msrepl87.asc} from the dataverse at http://bit.ly/wccyDu as an ascii file.
+		\item Load this file into your workspace as follows:
+		\begin{verbatim}
+		ms<-read.table("/Users/mw160/Downloads/Msrepl87.asc", header=TRUE, 
+			     colClasses=c("character",rep("numeric" ,22)))
+		rownames(ms) <- ms$country
+		\end{verbatim}
+		\item Make the following transformations:
+		\begin{itemize}
+			\item Create a variable, sanctions, that is the number of sanctions in 1970, per capita
+			\item Create a variable, deaths, that is 1 if the number of deaths in 1975 was 1 or more
+		\end{itemize}
+		\item Use the function you wrote for Problem 1 to estimate a model that predicts binary deaths as a function of an intercept and the variable sanctions.
+		\item Present the results in a coefficient plot. Write a paragraph summarizing the information you put in the table.
+		\item Next undertake a 10-fold cross-validation of this model, and assess whether or not the coefficient estimate on the sanctions variable changes depending on the fold. Additionally, for each fold you hold out provide a visual depiction of the performance (e.g, through a ROC or separation plot or both) for the model you estimated leaving out that fold.
+		\item Next determine the probability of there being a death in 1975 under six simple scenarios for the sanctions variable, specifically, the minimum, 1st quartile, median, mean, 3rd quartile, and maximum number of sanctions. 
+		\item Last, extend this analysis by accounting for uncertainty in your model, using the strategies we developed in class and in the textbook. Provide a visual representation of this analysis.
+		\item Write this all up in a 3-5 page memo, with tables and chairs included.
+	\end{itemize}
+\end{itemize}
+
+\newpage
+
+\end{document} 

@@ -1,0 +1,115 @@
+
+\documentclass[12pt]{article}
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{amsmath}
+\author{FeiYuan}
+\title{ols}
+\begin{document}
+\maketitle
+
+
+<<results='hide',warning=FALSE,echo=FALSE>>=
+
+lablepath='/Users/enhi/Desktop'
+setwd('/Users/enhi/Desktop/')
+library("foreign")
+load('midTermData.rda')
+packs=c('foreign', 'lmtest', 'sandwich', 'Amelia', 'sbgcop','xtable', 'ggplot2')
+
+loadpkg=function(toLoad){
+  for(lib in toLoad){
+  if(! lib %in% installed.packages()[,1])
+    { install.packages(lib, repos='http://cran.rstudio.com/') }
+  suppressMessages( library(lib, character.only=TRUE) ) }
+}
+
+
+char = function(x){ as.character(x) }
+num = function(x){ as.numeric(char(x)) }
+
+
+
+@
+
+
+<<>>=
+
+
+ols = function(formula, data, impute = FALSE){
+  if(impute==TRUE){
+  set.seed(6886)
+  data=amelia(x=data,m=1)$imp$imp1}
+  data=data[complete.cases(data),]
+  dv = all.vars(formula)[1]
+  ivs = all.vars(formula)[2:length(all.vars(formula))]
+  y = data[,dv]
+  x = data.matrix(cbind(1, data[,ivs]))
+  n = nrow(x) 
+  p = length(ivs) 
+  df = n-p-1 
+  
+  ## calculate beta 
+xTx=t(x) %*% x
+xTy=t(x)%*%y
+beta=solve(xTx)%*%xTy
+beta
+
+  
+ ## calculate standard error 
+yhat=x%*%beta
+e=y-yhat
+eTe=t(e)%*%e
+SSR=eTe
+residual2=SSR/n-p-1
+res = as.matrix(residual2)
+n = nrow(x)
+k = ncol(x)
+varcov = 1/(n-k) * as.numeric(t(res)%*%res) * solve(t(x)%*%x)
+se= sqrt(diag(varcov))
+
+##tstat, p-val and confidence interval 
+tstat = beta/se
+pval=round(2*pt(abs(tstat),df,lower.tail=FALSE),digits=3)
+up95=beta+qnorm(0.975)*se
+lo95=beta-qnorm(0.975)*se
+  
+
+## Get R square
+SSreg=sum((yhat-mean(y))^2)
+SStot=sum((y-mean(y))^2)
+Rsq=SSreg/SStot
+                
+## Get F stat
+MSREG=sum(yhat^2)/p
+MSRES=sum(e^2)/df
+Fstat=round(MSREG/MSRES,3)
+Fstatp = round(pf(Fstat,p,df,lower.tail=F),3)
+
+
+## Get R-sq
+SSreg=sum((yhat-mean(y))^2)
+SStot=sum((y-mean(y))^2)
+Rsq=SSreg/SStot
+
+## list
+coefficients = cbind(beta,se,tstat,pval,lo95,up95)
+colnames(coefficients)=c("Estimate", "Std. Error", "T-Statistic", "P-Value", "Lower 95% CI", "Upper 95% CI")
+rownames(coefficients)=c('intercept',ivs)
+
+Fstat=paste("F-statistic:",Fstat,"on",p,"and",df,"DF,","p-value:",Fstatp,sep=' ') 
+
+list = list(coefficients=coefficients,varcov=varcov,Rsq=Rsq,Fstat=Fstat)
+return(list)
+  }
+
+
+@
+
+
+
+
+
+\end{document}

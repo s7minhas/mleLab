@@ -1,0 +1,308 @@
+---
+title: 'MLE: Lab 7'
+author: "Shahryar Minhas"
+date: "March 3, 2015"
+output:
+  pdf_document:
+    fig_caption: yes
+  html_document: default
+header-includes:
+- \usepackage{multirow}
+- \usepackage{dcolumn}
+---
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Start with a clean workspace
+rm(list=ls())
+
+# Function to load packages
+loadPkg=function(toLoad){
+  for(lib in toLoad){
+	if(! lib %in% installed.packages()[,1])
+	  { install.packages(lib, repos='http://cran.rstudio.com/') }
+	suppressMessages( library(lib, character.only=TRUE) ) }
+}
+
+# Load libraries
+packs=c("ggplot2", 'lmtest', 'reshape2', 'sandwich')
+loadPkg(packs)
+
+# Set a theme for gg
+theme_set(theme_bw())
+
+# Functions that I use frequently
+char = function(x){ as.character(x) }
+num = function(x){ as.numeric(char(x)) }
+
+# Relevant paths
+labPath='~/Dropbox/Duke/Spring 2015/PS 733/lab5/'
+```
+
+# Interaction Effects
+
+A conditional hypothesis is one in which a relationship between two or more variables depends on the value of one or more other variables. Examples:
+
+* An increase in X is associated with an increase in Y when condition Z is met, but not when condition Z is absent.
+* X has a positive effect on Y that gets stronger as Z increases.
+
+## Islam & Authoritarianism
+
+Fish (2002) argues that predominantly Muslim societies are distinctly disadvantaged in democratization. To test this he regresses Freedom House scores (`fhrev`) on an Islamic religious tradition variable (`muslim`) that takes the value of one when a country is predominantly Muslim and zero otherwise. He also goes on to add a number of additional controls for level of development (`income`), sociocultural division (`elf`), economic growth (`growth`), British colonial heritage (`britcol`), Communist heritage (`postcom`), and OPEC membership (`opec`). 
+
+We will rerun his model and run one of our own that includes an interaction term between Islamic religious tradition and level of economic development. Our hypothesis is that higher levels of economic development should be associated with higher Freedom House scores for non-Muslim countries, but that same relationship should not hold for Muslim countries. 
+
+```{r, echo=FALSE}
+# Load data
+fishPath=paste0(labPath, "fish.RData")
+load(fishPath) # loads object named fish to environment
+
+#Fish Model 4, Dep: fhrev. Indep: muslim, income, opec
+print("Fish's Original Model")
+lm1<-lm(fhrev~muslim + income + elf + growth + britcol + postcom + opec, data=fish)
+round(summary(lm1)$coefficients,3)
+
+# Add interaction between muslim and income
+print('Model with interaction')
+lm2 = lm(fhrev~muslim + income + muslim:income + elf + growth + britcol + postcom + opec, data=fish)
+round(summary(lm2)$coefficients,3)
+
+# Did adding the interaction improve the fit of the model?
+rmse = function(mod){ 
+  sqrt(mean(resid(mod)^2))
+  }
+rmse(lm1)
+rmse(lm2)
+summary(fish$fhrev)
+sd(fish$fhrev)
+
+# What other diagnostics can we use to test whether or not 
+# the interaction effect should be included in the model?
+anova(lm1, lm2) # ftest
+lrtest(lm1, lm2) # likelihood ratio test
+
+```
+
+
+
+## Interpretation
+
+When interpreting the effects of a covariate we need to keep the conditional relationship in mind. In Fish's original model, to interpret the effect of a one unit change in income on Freedom House scores we would just note that $\beta_{income}$ equaled `r round(coef(lm1)['income'],2)`.  
+
+After incorporating the interaction effect, however, it is no longer as straightforward because: 
+
+$$\frac{\partial fhrev}{\partial income} = \hat\beta_{income} + \hat\beta_{muslim:income} \times muslim$$
+
+We can see that now the effect of income on Freedom House scores is contingent on the value of $\beta_{muslim:income}$ and `muslim`. If `muslim` equals zero, the effect of income on Freedom House scores can be understood through just $\beta_{income}$, but if muslim equals one then the effect of income is measured through $\beta_{income} + \beta_{muslim:income}$.
+
+The necessity of taking the interactive relationship into account is also true for how we estimate the effect of a country having an Islamic religous tradition as well. 
+
+$$\frac{\partial fhrev}{\partial muslim} = \hat\beta_{muslim} + \hat\beta_{muslim:income} \times income$$
+
+The best way to understand an interactive effect is through a visualization, so lets do that now. On the y-axis, we will have predicted FH scores, and on the x-axis we will have the range of income values in the Fish dataset. To incorporate the Muslim variable, we will use two different colored lines to show the conditional effect of a country having an Islamic religious tradition.
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE, fig.width=9, fig.height=5, fig.cap='Marginal Effect Plots'}
+
+# Partial Effect of Muslim on Democracy by Income
+incomeRange=sort(fish$income)
+musCoef=coef(lm2)['muslim']
+musIncCoef=coef(lm2)['muslim:income']
+partEffectMuslim=musCoef + musIncCoef * incomeRange
+
+# Partial effect of income on democracy by muslim
+
+muslimRange=c(0,1)
+incCoef=coef(lm2)['income']
+partEffectIncome=incCoef + musIncCoef * muslimRange
+
+par(mfrow=c(1,2))
+plot(incomeRange, partEffectMuslim, type='l')
+plot(factor(muslimRange), partEffectIncome)
+par(mfrow=c(1,1))
+```
+
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE, fig.width=9, fig.height=5, fig.cap='Interactive Effect of Economic Development and Religious Tradition on Democracy'}
+# scenario 1: include all values of income, muslim=1, other vars at central tendency
+attach(fish)
+incomeRange=sort(income)
+scen1=cbind(1, 1, incomeRange, mean(elf), mean(growth), median(britcol), median(postcom), median(opec), 1*incomeRange)
+detach(fish)
+
+# scenario 2: include all values of income, muslim=0, other vars at central tendency
+attach(fish)
+scen2=cbind(1, 0, incomeRange, mean(elf), mean(growth), median(britcol), median(postcom), median(opec), 0*incomeRange)
+detach(fish)
+
+# Pull out relevant regression parameters
+coefs = coef(lm2)
+
+# Calculate y hats
+yhatScen1 = scen1 %*% coefs
+yhatScen2 = scen2 %*% coefs
+
+# Create dataframe for plotting
+ggData=data.frame( rbind(
+  cbind(Income=incomeRange, FH=yhatScen1, Muslim=1),
+  cbind(Income=incomeRange, FH=yhatScen2, Muslim=0) ) )
+colnames(ggData)[2]='FH'
+
+# Reshape data
+tmp=ggplot()
+# Plotting our predicted values
+tmp=tmp + geom_line(data=ggData, aes(x=Income, y=FH, color=factor(Muslim)))
+# Lets incorporate the actual data as well
+tmp=tmp + geom_point(data=fish, aes(x=income, y=fhrev, color=factor(muslim)))
+# Relabel legend items
+tmp=tmp + scale_color_discrete(breaks=c(0,1), labels=c('Non-Muslim', 'Muslim'))
+# Relabel y-axis
+tmp=tmp + scale_y_continuous(name='Freedom House Ratings \n (1=Least Free to 7=Most Free)', 
+                             limits=c(.9,7.1), breaks=seq(1, 7, 2), expand=c(0,0))
+# Relabel x-axis
+tmp=tmp + scale_x_continuous(name='Economic development \n (log GDP per capita in 1990)',
+                             limits=c(2,4.7), breaks=seq(2,5,.5), expand=c(0,0))
+# Clean up plot
+tmp=tmp + theme(legend.position='top', legend.title=element_blank(), 
+                axis.ticks=element_blank(), panel.border=element_blank(),
+                axis.title.y=element_text(vjust=2))
+tmp
+```
+
+
+## Are these Marginal Effects Significant?
+
+In the figure above, we have done a pretty decent job in showing how our interactive effect works in predicting FH scores across the different values of economic development and religious tradition. However, before we can fully understand the substantive meaning of this interaction effect we also need to take into account the standard errors around the interactive effect. This will help us to answer the question of whether marginal effect of our covariate is significant. 
+
+From above we know that: 
+
+$$\frac{\partial fhrev}{\partial income} = \hat\beta_{income} + \hat\beta_{muslim:income} \times muslim$$
+
+Lets denote the `muslim` variable by $M$ and `income` by $I$, then we can express the variance of $\frac{\partial fhrev}{\partial income}$ as:
+
+$$\begin{aligned}
+Var(\frac{\partial fhrev}{\partial I}) &= Var(\hat\beta_{I} + \beta_{M:I} \times M) \\
+&= Var(\hat\beta_{I}) + Var(\hat\beta_{M:I} \times M) + 2 Cov(\hat\beta_{I}, \beta_{M:I} \times M) \\
+&= Var(\hat\beta_{I}) + M^2 \, Var(\hat\beta_{M:I}) + 2 \, M \, Cov(\hat\beta_{I}, \beta_{M:I} )
+\end{aligned}$$
+
+We can summarize what we have learned so far in a neat 2 $\times$ 2 (remind yourself that the standard error is just the square root of the estimated variance):
+
+$$\begin{tabular}{l|cc}
+~ & M = 0 & M = 1 \\
+\hline
+Marginal Effect of Income & $\hat\beta_{I}$ & $\hat\beta_{I}$ +$ \hat\beta_{M:I}$ \\
+Standard Error & $\sqrt{ var(\hat\beta_{I}) }$ & $\sqrt{ var(\hat\beta_{I}) + M^{2} var(\hat\beta_{M:I}) + 2 M cov(\hat\beta_{I}, \hat\beta_{M:I})   }$  \\
+\hline
+\end{tabular}$$
+
+Now lets do a simple numerical example for how to get a confidence interval around the marginal effect. Before we can start we need to get the necessary parameter values, specifically, we need the coefficient estimates, variances, and covariances. We can find each of these by using the variance-covariance martix from our regression results, we can access this matrix by calling the `vcov` function on our model:
+
+```{r}
+round(vcov(lm2)[c('muslim','income','muslim:income'),c('muslim','income','muslim:income')],4)
+```
+
+The diagnoals of this matrix are filled with the variance estimates of our regressions and the off-diagnoals their covariances. From this matrix we can pull out the necessary information we need to calculate the confidence interval around the marginal effect of income on FH scores.
+
+Marginal effect of Income on FH scores when muslim = 0: $\hat\beta_{I} + \hat\beta_{M:I} \times 0$ = ?
+
+Corresponding standard error: $\sqrt{ var(\hat\beta_{I}) }$ = ?
+
+Marginal effect of Income on FH scores when muslim = 1: $\hat\beta_{I} + \hat\beta_{M:I} \times 1$ = ?
+
+Corresponding standard error: 
+
+$\sqrt{ var(\hat\beta_{I}) + M^{2} var(\hat\beta_{M:I}) + 2 M cov(\hat\beta_{I}, \hat\beta_{M:I})}$ = ?
+
+Given this information we can fill in the table that we presented before: 
+
+$$\begin{tabular}{l|cc}
+~ & Muslim = 0 & Muslim = 1 \\
+\hline
+Marginal Effect of Income & ? & ? \\
+Standard Error & ? & ? \\
+\hline
+\end{tabular}$$
+
+From this information we can now answer the question that we started with this section. To calculate the 95% confidence interval, we follow the same procedure as always: 
+
+Upper 95% CI for marginal effect of income when muslim=0: ?
+
+Lower 95% CI for marginal effect of income when muslim=0: ?
+
+Upper 95% CI for marginal effect of income when muslim=1: ?
+
+Lower 95% CI for marginal effect of income when muslim=1: ?
+
+Tables are boring lets make a plot to illustrate this result, specifically what is known as a marginal effects plot. 
+
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE, fig.width=9, fig.height=5, fig.cap='Marginal Effect of Income on Democracy at Levels of Muslim'}
+# Lets calculate a vector of marginal effects
+muslimRange=c(0,1)
+effects = coefs['income'] + coefs['muslim:income']*muslimRange
+
+# Lets calculate the standard error
+ses = sqrt( vcov(lm2)['income','income'] + muslimRange^2*vcov(lm2)['muslim:income','muslim:income']+ 2*muslimRange*vcov(lm2)['income','muslim:income'] )
+
+# Lets get the 95% confidence intervals
+upper = effects + 1.96*ses
+lower = effects - 1.96*ses
+
+# Lets combine all this into a dataframe
+ggEffect = data.frame(muslimRange, effects, ses, upper, lower)
+
+# Lets plot this
+incomeEffect=ggplot(ggEffect, aes(x=factor(muslimRange), y=effects, ymin=lower, ymax=upper))
+incomeEffect=incomeEffect + geom_linerange() + geom_point()
+incomeEffect=incomeEffect + geom_hline(aes(yintercept=0), color='red', linetype=2)
+incomeEffect
+```
+
+
+Now lets do this same analysis to assess the signifiance of the marginal effect of muslim on Freedom House scores at the varying levels of income in the Fish dataset. 
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE, fig.width=9, fig.height=5, fig.cap='Marginal Effect of Muslim on Democracy at Varying Levels of Income'}
+# Lets calculate a vector of marginal effects
+incomeRange=sort(fish$income)
+effects = coefs['muslim'] + coefs['muslim:income']*incomeRange
+
+# Lets calculate the standard error
+varMus=vcov(lm2)['muslim','muslim']
+varMusInc=vcov(lm2)['muslim:income', 'muslim:income']
+covar=vcov(lm2)['muslim', 'muslim:income']
+ses = sqrt( varMus + incomeRange^2 * varMusInc + 2*incomeRange*covar )
+
+# Lets get the 95% confidence intervals
+upper = effects + 1.96*ses
+lower = effects - 1.96*ses
+
+# Lets combine all this into a dataframe
+ggEffect = data.frame(incomeRange, effects, ses, upper, lower)
+
+# Lets plot this
+muslimEffect=ggplot(ggEffect, aes(x=incomeRange, y=effects, ymin=lower, ymax=upper))
+muslimEffect=muslimEffect + geom_ribbon(fill='grey') + geom_line()
+muslimEffect=muslimEffect + geom_hline(aes(yintercept=0), color='red', linetype=2)
+muslimEffect=muslimEffect + geom_rug(sides='b', position='jitter')
+muslimEffect
+```
+
+
+I find that marginal effect plots are useful to an extent but I prefer thinking of the interactive relationship in a holistic sense that allows us to directly relate the scenarios we are modeling to the dependent variable. 
+
+To do this we're going to bring back the plot that we started with and add some confidence intervals to it. 
+
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE, fig.width=9, fig.height=5, fig.cap='Interactive Effect with Confidence Intervals of Economic Development and Religious Tradition on Democracy'}
+# First let's organize the values
+
+
+# Calculate y hats with confidence intervals
+
+
+# Lets combine these results into a dataframe so that we can
+## add them to our plot
+
+
+# Lets add the confidence intervals to our plot
+
+```

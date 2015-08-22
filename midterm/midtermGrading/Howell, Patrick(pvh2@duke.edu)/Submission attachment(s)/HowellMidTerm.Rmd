@@ -1,0 +1,241 @@
+---
+title: "HowellMidTerm"
+author: "Patrick Howell"
+date: "Thursday, March 05, 2015"
+output: pdf_document
+---
+
+
+```{r, message=FALSE, warning=FALSE, results='hide',echo=FALSE} 
+###CHUNK 1... This chunk is the standard prep to work chunk
+
+#1- Clear memory
+rm(list=ls()) 
+
+#2- Create a value that is the path to the working directory
+labPath='~/Dropbox/Duke/Spring 2015/PS 733/midterm/'
+
+#3- Set the working directory (doing it two ways: call the value and setting working directory)
+labPath
+setwd('~/Dropbox/Duke/Spring 2015/PS 733/midterm')
+
+#4-  Functions 
+  #4a- to load packages...instead of typing library mutiple time
+  loadPkg=function(toLoad){
+    for(lib in toLoad){
+    if(! lib %in% installed.packages()[,1])
+  	  { install.packages(lib, repos='http://cran.rstudio.com/') }
+  	suppressMessages( library(lib, character.only=TRUE) ) }
+  }
+  #4b-to convert data into characters and numbers
+  char = function(x){ as.character(x) }
+  num = function(x){ as.numeric(char(x)) }
+
+#5- Load libraries
+packs=c('foreign', 'lmtest', 'sandwich', 'Amelia','ggplot2','coefplot','sbgcop','stargazer','coefplot','MASS','xtable','knitr','pander') 
+        
+loadPkg(packs)
+
+#6-  Set a theme for gg
+theme_set(theme_bw())
+
+#7- Telling R to set the seed in case I need to do random draws
+set.seed(6886)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',echo=FALSE} 
+###CHUNK 2... This chunk downloads the data and then looks at it
+
+#1- downloads the data
+load("midTermData.rda")
+attach("midTermData.rda")
+
+#2- looks at data
+  #2a dimension of "clean dataset".... 46 x 3 (Gini, Polity, ELF)
+  dim(na.omit(data))
+  #2b dimension of missing dataset.... 40 x3 (it list-wise deletes missing data)
+  dim(na.omit(dataMiss))
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',echo=FALSE} 
+###CHUNK 3... This chunk is to create the function OLS that returns a list
+
+ols <- function(formula, data, impute=FALSE){
+
+  #Step 1: do an IF function to run Amelia
+  if (impute==TRUE){
+     a.out <- amelia(x=data,m=1)
+     data <-a.out$imputation[[1]]
+     #data <- amelia(x=data, m=1)
+    }
+
+  #Step 2: tells the function to omit missing data... if ran amelia, nothing will be omitted
+  data <-na.omit(data)
+  
+  #Step 3: create value (DV & IV) that come from the elements of the TBD formula
+  dv = all.vars(formula)[1] #for ease of coding, this labels the first variable in formula as the DV
+  ivs = all.vars(formula)[ 2:length(all.vars(formula)) ] #same... but label the others vars as IVs
+  
+  #Step 4: create matrix with columns for intercept and IDVs: (n=# observation; p=# parameters)
+  y = data[,dv]  #this creates a n*1 vector of DV values by subsetting data matrix 
+  x = data.matrix(cbind(1, data[,ivs])) #creates n*(p+1) Design Matrix of intercept and coefficients.  
+
+  colnames(x)[1] <- c('(Intercept)') #this labels the 1st column of Design Matrix as Intercept 
+  
+  n = nrow(x) # Number of observations
+  p = length(ivs) # Number of parameters
+  df = n-p-1 # degrees of freedom is # observatioms - # coefficients -1
+
+  #Step 5: determine the estimated Coefficients from OLS "Beta Hat"
+  xtx <-  t(x) %*%x #matrix multiply transposed Design Matrix against itself(sizde of matrix?)
+  xty <- t(x) %*% y #matrix multiply transposed Design Matrix againt vector of DVs 
+  betahat <-  solve(xtx) %*% xty #p+1 vector of OLS estimated coefficients from xTx and xTy
+
+  #Step 6: determine Standard errors
+  yhat <- x %*% betahat #n*1 vector of Predicted values of y (Design matrix * Coeff vector)
+  resid <- y- yhat #n*1 vector of Residuals or Errors (difference between real and estimated)
+  error2 <- sum(resid^2) #numeric (1*1 vector) Residual Sum of Squares
+  sigmasq <- error2/df #numeric (1*1 vector) of RSS/degress of freedom
+  varcov <- sigmasq*solve(xtx) #p+1 x p+1 variance/covariance matrix (xTX * sigma2)
+  stderrors <-  sqrt(diag(varcov)) #p+1 vector of Standard Deviations (diagonal of varcov matrix
+
+  #Step 7: determine the T-stat
+  tstats <- betahat/stderrors #p+1 vector that gives a T-stat for each parameter and constant
+
+  #Step 8: determine the p-value (probablity you would find this answer assuming Null Hypoth true)
+  pval <-  2 * pt(abs(tstats), df=n-p-1, lower.tail=F)
+  pval <- round(pval, digits=3)
+  
+  #Step 9: determine confidence intervals    
+  upper95 = betahat + qnorm(.975)*stderrors #n*1 vector of upper 95% CI for each y-hat value
+  lower95 = betahat - qnorm(.975)*stderrors #n*1 vector of lower 95% CI for each y-hat value 
+
+  #Step 10: creates the matrix object for output
+  coefficients <- (cbind(betahat, stderrors,
+                 round(tstats, digits =3), round(pval,digits = 3),
+                 lower95, upper95)) #this binds all of the column names into a single value
+  colnames(coefficients) <- c("Estimate", "Std. Error", "T-Statistic", "P-Value","Lower 95% CI", "Upper 95% CI") #this labels the columns 
+
+  #Step 11: creates the Variance-Covariance Matrix for the OLS
+  varcov <- sigmasq*solve(xtx) #p+1 x p+1 variance/covariance matrix (xTX * sigma2)
+
+  #Step 12: create the R^2
+  SSreg <-  sum((yhat-mean(y))^2) #sum of the square of difference btw yhat and avg y (numeric)
+  SStot <- sum((y-mean(y))^2) #sum of the square of difference btw actual y and avg y (numeric)
+  Rsq <-  SSreg/SStot #R-squared (numeric)
+  names(Rsq) <- "R-squared" #labels the value (char)
+
+  #Step 13: calculate the F-statistic..output is a sentence statement with variables in it
+  MSreg <-  sum(yhat)^2/ p
+  MSresid <-  sum(resid^2)/df
+  Fstat <-  round(MSreg/ MSresid, digits =3)
+  pval2 <- pf(Fstat, p, df, lower.tail=FALSE) #p=#parameters, df+degree freedom n-p-1
+  FSoutput <- paste0("F-statistic: ", round(Fstat,digits= 3)," on ",p," and ",df," DF,"," p-value: ",round(pval2,digits=3))
+
+  #Step 14: putting together the output
+  outList <- list(coefficients, varcov, Rsq, FSoutput) #Steps:Coeff=5-10; varcov=11, Rsq=12, Fstat=13
+  names(outList) <- c('coefficients', 'varcov', 'Rsq', "Fstat")
+  return(outList)
+}
+```
+
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE,results='hide'} 
+###CHUNK 4... This chunk runs the various models
+
+#1- creates the formula (Gini as a function of ELF and Polity)
+form = formula(gini_net_std ~ ELF_ethnic + polity2)
+
+#2- runs the various models
+
+  #2a- Full dataset
+  model = ols(formula=form, data=data)
+  #2b- Missing data
+  modelListDel= ols(formula = form, data=dataMiss)
+  #2c-Imputed data
+  modelAmelia =ols(formula=form, data=dataMiss, impute=TRUE)
+
+```
+
+#Discussion of Differences between models
+
+For the MLE Midterm we replicated the linear model function in R by coding our own OLS function. We would then run that OLS function against three related datasets.
+
+The first one was a "pure" dataset of 46 observations on three variables (2*IV and 1*DV) with no missing information; the second was the same dataset, but it was missing 6 datapoints; and the third took the second dataset and imputed the missing daata using the Amelia program.
+
+The OLS function that we created would take any dataset, do list-wise deletion of any observations that were missing data and then do several calculations to replicate the LM function.  The OLS function would only impute data if expressly told to.
+
+My major observation is that the missing dataset that we received did not meet the fundamental assumption of imputation- that the missing data was distributed randomly and normally. When it is, imputed datasets give answers closer to true dataset than list-wise deletion.  When the missing data is systemic (i.e. only the richest people responding to a survey do not put down their income) but Amelia/Imputation program imputes normally distibuted data, this skews the results.
+
+In this case, the Estimates for the Intercept, ELF, and Polity from the dataset with missing data were closer to the true dataset than the Imputed (Amelia) dataset. See below matrix.
+
+To verify my work, I also ran R's linear model function on the three datasets (true, missing, and imputed). The LM (in R)  and OLS (written by me) estimates for intercept, ELF, and Polity for the true and missing datasets were identical (to three decimals places). However, for the Amelia dataset, the OLS and LM estimates were the same for Intercept (to two decimal places) and Polity (to one decimal place), but they were very different for ELF (.645 vs .334 --> difference of .311)  
+
+This would have been easier/clearer to understand if I had been able to re-produce graphics similar to the k-fold exercise.  I would have had three graphs; one each for Intercept, ELF, and Polity.  On each graph I would graph the estimate and the 90% and 95% confidence interval.  Each graph would have six models (OLS =made by me and LM from R). OLS and LM True Data; OLS and LM Missing Data; OLS and LM Imputed Data.
+
+
+This was not done primarily due to my limitation on R programming and secondarily due to my R "dropping" ggplot and not letting it re-load. 
+
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE} 
+###CHUNK 5... This chunk runs the various models
+
+#1- puts all output into a matrix
+  #1a- Full data set
+  out.model = matrix(model$coefficients[,c(1,5,6)], nrow=3, ncol=3)
+  #1b- Data set with missing info
+  out.modelListDel = matrix(modelListDel$coefficients[,c(1,5,6)], nrow=3, ncol=3)
+  #1c- Dataset with imputed data
+  out.modelAmelia <- matrix(modelAmelia$coefficients[,c(1,5,6)], nrow =3, ncol =3)
+
+#2- Combines the three data matrixes into one and labels rows/columns
+  
+  #2a
+  output <- rbind(out.model, out.modelListDel, out.modelAmelia)
+  #2b
+  dimnames(output)= list(
+    c('Intercept','ELF','Polity',
+      'Intercept- Missing data','ELF- Missing data','Polity- Missing data',
+      'Intercept- Imputed Data','ELF- Imputed data','Polity-Imputed data'),
+    c('Estimate','Lower 95%','Upper 95%'))
+
+#3 print final datamatrix
+
+pandoc.table(output)
+
+```
+
+#Full or True Dataset
+
+Below are the printouts from true or full data set using the OLS function that I made and the LM function in R. While the Coefficients and R2 are identical to three decimal places, the F-stat and p-values are nowhere near each other. I was unable to figure out why. 
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+##CHUNK 5... to verify against the full dataset
+model
+verify = lm(form, data=data)  
+summary(verify)
+```
+
+#Missing Dataset
+
+Below are the printouts from Missing data set using the OLS function that I made and the LM function in R. While the Coefficients, R2 and p-value are idenitical to three decimal places, the F-stats were  not near each other. I was unable to figure out why.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+### to veriy against data set with missing data
+modelListDel
+verifyMiss = lm(form, data=dataMiss)  
+summary(verifyMiss)
+```
+
+#Imputed Dataset
+
+Below are the printouts from Imputed/Amelia data set using the OLS function that I made and the LM function in R. While the Intercept & Polity Coefficients are identical (to two decimal places), the ELF Coefficient, R2, F-stat and p-values are nowhere near each other. I was unable to figure out why.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+##to verify against dataset with imputed data
+modelAmelia
+a.out <- amelia(dataMiss, m=1)
+verifyAmelia = lm(form, data = a.out[[1]]$imp1)
+summary(verifyAmelia)
+```

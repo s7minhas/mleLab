@@ -1,0 +1,263 @@
+---
+title: 'MLE: Lab 3'
+author: "Shahryar Minhas"
+date: "January 29, 2014"
+header-includes:
+   - \usepackage{multirow}
+   - \usepackage{dcolumn}
+output: 
+  pdf_document:
+    fig_caption: yes
+---
+
+# Setup
+
+```{r, message=FALSE, warning=FALSE}
+# Start with a clean workspace
+rm(list=ls())
+
+# Function to load packages
+loadPkg=function(toLoad){
+  for(lib in toLoad){
+	if(! lib %in% installed.packages()[,1])
+	  { install.packages(lib, repos='http://cran.rstudio.com/') }
+	suppressMessages( library(lib, character.only=TRUE) ) }
+}
+
+# Load libraries
+packs=c("ggplot2", 'lmtest', 'car', 'sandwich')
+loadPkg(packs)
+
+# Set a theme for gg
+theme_set(theme_bw())
+
+# Functions that I use frequently
+char = function(x){ as.character(x) }
+num = function(x){ as.numeric(char(x)) }
+
+# Relevant paths
+labPath='~/Dropbox/Duke/Spring 2015/PS 733/lab3'
+```
+
+# Muller & Seligson Regression
+
+```{r, results='hide'}
+# Load data
+msrepPath=paste0(labPath, "/Msrepl87.asc")
+msrep = read.table(msrepPath, header=TRUE)
+
+# Create silly logged version of DV
+msrep$deaths75ln = log(msrep$deaths75+1)
+
+# Create logs of other things
+msrep$deaths70ln = log(msrep$deaths70+1)
+msrep$sanctions75ln = log(msrep$sanctions75+1)
+msrep$sanctions70ln = log(msrep$sanctions70+1)
+msrep$energypcln = log(msrep$energypc+1)
+```
+
+## Functional Form
+
+### Omitted Variable Bias
+
+```{r}
+# How to assess effects of misspecification from OVB 
+# Bivariate case
+cor(msrepRegData[,c('deaths75ln', 'upper20', 'sanctions75ln')])
+
+coeftest( lm(deaths75ln ~ upper20 + sanctions75ln, data=msrepRegData) )
+
+# If we excluded sanctions75ln from the model what would you expect of the
+# coefficient on upper20
+coeftest( lm(deaths75ln ~ upper20, data=msrepRegData) )
+
+# If we excluded upper20 from the model what would you expect of the
+# coefficient on sanctions75ln
+coeftest( lm(deaths75ln ~ sanctions75ln, data=msrepRegData) )
+
+# More complicated model
+# Harder to assess direction of bias in these cases
+ivs=c('upper20', 'energypcln', 'intensep', 
+      'sanctions70ln', 'sanctions75ln', 'deaths70ln')
+msrepRegData=na.omit(msrep[,c('deaths75ln', ivs)])
+olsForm1=formula(paste0('deaths75ln ~ ', paste(ivs, collapse=' + ')))
+olsForm2=formula(paste0('deaths75ln ~ ', paste(ivs[c(2:length(ivs))], collapse=' + ')))
+mod1 = lm(olsForm1, data=msrepRegData)
+mod2 = lm(olsForm2, data=msrepRegData)
+
+# View model results
+summary(mod1)
+summary(mod2)
+```
+
+### F-test
+
+```{r}
+# How would we do a partial F-test
+ssr1=sum(resid(mod1)^2)
+ssr2=sum(resid(mod2)^2)
+chgReg=ncol(model.matrix(mod1)) - ncol(model.matrix(mod2))
+# F statistic
+Fstat=((ssr1-ssr2)/chgReg)/(ssr1/df.residual(mod1))
+1-pf(abs(Fstat), chgReg, df.residual(mod1))
+
+# Function from base stats
+anova(mod1, mod2)
+```
+
+### Likelihood Ratio Test
+
+```{r}
+# This runs a likelihood ratio test
+# Inputs are lm model objects, where the first is the
+# full model and the second the restricted
+likeRatTest <- function(full,restr){
+  n=length(resid(full))
+  ssrF=sum(resid(full)^2)
+  ssrR=sum(resid(restr)^2)
+  val=n*log(ssrR/ssrF)
+  chgReg=ncol(model.matrix(full)) - ncol(model.matrix(restr))
+  pval = 1-pchisq(val,chgReg)
+  output=round(c(val, pval),5)
+  names(output)=c('Likelihood Ratio', 'P-value')
+  return(output)  
+  }
+likeRatTest(mod1,mod2)
+
+
+```
+
+### Partial Residual Plots
+
+```{r}
+# How to test for non-linear effects in parameters
+# Can use a the crPlots function from the car library
+# to generate partial residual plots
+crPlots(mod1)
+
+# Incorporating a non-linear effect
+
+msrepRegData$upper20sq = msrepRegData$upper20^2
+olsForm3=formula('deaths75ln ~ upper20 + upper20sq + energypcln + intensep + 
+                 sanctions70ln + sanctions75ln + deaths70ln')
+
+olsForm3=formula('deaths75ln ~ poly(upper20,2) + energypcln + intensep + 
+                 sanctions70ln + sanctions75ln + deaths70ln')
+mod3=lm(olsForm3, data=msrepRegData)
+
+# Examine coefficient results
+coeftest(mod3)
+
+# How to evaluate whether to keep non-linear term?
+anova(mod1, mod3)
+lrtest(mod1, mod3)
+```
+
+### Non-Constant Coefficients
+
+The Chow test is a statistical and econometric test of whether the coefficients in two linear regressions on different data sets are equal. The Chow test was invented by economist Gregory Chow in 1960. In econometrics, the Chow test is most commonly used in time series analysis to test for the presence of a structural break.
+
+The Chow test is used to see if it makes sense to run two separate regressions on two mutually exclusive subsets of your data (divided by a break point) by comparing the results of the two “unrestricted” regressions versus the “restricted” regression that pools all the data together.
+
+The procedure is as follows:
+* Run a “restricted” regression on all your data (pooled).
+* Divide your sample into to groups, determined by your breakpoint (e.g. a point in time, or a variable value).
+* Run an “unrestricted” regression on each of your subsamples.  You will run two “unrestricted” regressions with a single breakpoint.
+
+
+```{r, results='hide', include=FALSE}
+# Computing the chow statistic
+# First convert data into two lets say random subsamples
+set.seed(6886)
+par(mfrow=c(1,1))
+data(faithful)
+of = faithful
+plot(of, col="blue",main="Eruptions of Old Faithful")
+
+## Run three regressions (1 restricted, 2 unrestricted)
+r.reg = lm(waiting ~ eruptions, data = of)
+ur.reg1 = lm(waiting ~ eruptions, data = of[of$eruptions > 3.25,])
+ur.reg2 = lm(waiting ~ eruptions, data = of[of$eruptions <=3.25,])
+## review the regression results
+coeftest(r.reg)
+coeftest(ur.reg1)
+coeftest(ur.reg2)
+ 
+## Calculate sum of squared residuals for each regression
+SSR = NULL
+SSR$r = r.reg$residuals^2
+SSR$ur1 = ur.reg1$residuals^2
+SSR$ur2 = ur.reg2$residuals^2
+ 
+## K is the number of regressors in our model
+K = r.reg$rank
+ 
+## Computing the Chow test statistic (F-test)
+numerator = ( sum(SSR$r) - (sum(SSR$ur1) + sum(SSR$ur2)) ) / K
+denominator = (sum(SSR$ur1) + sum(SSR$ur2)) / (nrow(of) - 2*K)
+chow = numerator / denominator
+chow
+ 
+## Calculate P-value
+1-pf(chow, K, (nrow(of) - 2*K))
+
+## Plot the results
+plot(of,main="Eruptions of Old Faithful")
+# restricted model
+abline(r.reg, col = "red",lwd = 2, lty = "dashed")
+# unrestricted model 1
+segments(0, ur.reg2$coefficients[1], 3.25,
+ur.reg2$coefficients[1]+3.25*ur.reg2$coefficients[2], col= 'blue')
+# unrestricted model 2
+segments(3.25, ur.reg1$coefficients[1]+3.25*ur.reg1$coefficients[2],
+5.2, ur.reg1$coefficients[1]+5.2*ur.reg1$coefficients[2], col= 'blue')
+
+## Sort the data
+sort.of = of[order(of$eruptions) , ]
+sort.of = cbind(index(sort.of),sort.of)
+ 
+## Identify the row number of our breakpoint
+brk = max(sort.of[,1][sort.of$eruptions<=3.25])
+ 
+## Using the CRAN package 'strucchange'
+library(strucchange)
+sctest(waiting ~ eruptions, type = "Chow", point = brk, data = sort.of)
+
+of$dummy = as.numeric(of$eruptions >= 3.25)
+summary(lm(eruptions ~ waiting + I(dummy*waiting) + dummy, data = of))
+```
+
+## Heteroskedasticity
+
+```{r}
+# How to calculate the Breusch-Pagan test statistic
+residMod1=resid(mod1)^2
+bpForm=formula(paste0('residMod1 ~', paste(ivs, collapse=' + ')))
+bpMod=lm(bpForm, data=msrepRegData)
+bpStat=summary(bpMod)$r.squared*nrow(msrepRegData)
+1-pchisq(bpStat, df=length(ivs))
+
+# Breusch-Pagan test: using bptest from lmtest library
+bptest(mod1)
+```
+
+```{r}
+# Residuals vs fitted
+par(mfrow=c(1,2))
+plot(mod1, 1)
+plot(predict(mod1), resid(mod1))
+
+# Scale-location
+stdResid=(resid(mod1)-mean(resid(mod1)))/sd(resid(mod1))
+plot(mod1, 3)
+plot(predict(mod1), sqrt(abs(stdResid)))
+```
+
+#### Dealing with heteroskedasticity: Robust standard errors
+
+```{r, results='hide'}
+# Can use the sandwich package in combination with lmtest to help
+# us calculate robust standard errors
+coeftest(mod1, vcov=vcovHC(mod1, type='HC1'))
+coeftest(mod1)
+```
